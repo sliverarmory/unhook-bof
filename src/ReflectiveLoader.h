@@ -70,7 +70,6 @@ typedef LPVOID(WINAPI*VIRTUALLOCK)(LPVOID,SIZE_T);
 
 #define HASH_KEY						13
 //===============================================================================================//
-#pragma intrinsic( _rotr )
 
 __forceinline DWORD ror( DWORD d )
 {

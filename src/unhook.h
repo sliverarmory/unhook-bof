@@ -1,5 +1,4 @@
 #pragma once
-#pragma intrinsic(strcmp)
 
 DECLSPEC_IMPORT BOOL     WINAPI   KERNEL32$CloseHandle(HANDLE);
 DECLSPEC_IMPORT HANDLE   WINAPI   KERNEL32$CreateFileMappingW(HANDLE, LPSECURITY_ATTRIBUTES, DWORD, DWORD, DWORD, LPCWSTR);
@@ -26,6 +25,9 @@ DECLSPEC_IMPORT char *   __cdecl  MSVCRT$strtok ( char * str, const char * delim
 DECLSPEC_IMPORT char *   __cdecl  MSVCRT$strncpy(char *_Str, const char *_SubStr, size_t num);
 DECLSPEC_IMPORT void *   __cdecl  MSVCRT$memset(void * ptr, int value, size_t num);
 DECLSPEC_IMPORT int      __cdecl  MSVCRT$vsprintf_s(char *buffer, size_t numberOfElements, const char *format, ...);
+DECLSPEC_IMPORT int      __cdecl  MSVCRT$strncmp(const char *s1, const char *s2, size_t n);
+DECLSPEC_IMPORT int      __cdecl  MSVCRT$wcscmp(const wchar_t *_Str1,const wchar_t *_Str2);
+DECLSPEC_IMPORT int      __cdecl  MSVCRT$strcmp(const char *_Str1,const char *_Str2);
 
 #define _wcsnicmp MSVCRT$_wcsnicmp
 #define calloc MSVCRT$calloc
@@ -35,6 +37,9 @@ DECLSPEC_IMPORT int      __cdecl  MSVCRT$vsprintf_s(char *buffer, size_t numberO
 #define strnlen MSVCRT$strnlen
 #define strstr MSVCRT$strstr
 #define vsprintf_s MSVCRT$vsprintf_s
+#define strncmp MSVCRT$strncmp
+#define wcscmp MSVCRT$wcscmp
+#define strcmp MSVCRT$strcmp
 
 //void dprintf(char * fmt, ...);
 #define dprintf //

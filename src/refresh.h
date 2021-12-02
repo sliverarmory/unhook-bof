@@ -3,6 +3,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#define NtCurrentProcess() ( (HANDLE)(LONG_PTR) -1 )
+#ifndef NT_SUCCESS
+#define NT_SUCCESS(Status) ((LONG32)(Status) >= 0)
+#endif
+
 #ifdef _DEBUG
 #define OUTPUTDBGA(str) OutputDebugStringA(str);
 #define OUTPUTDBGW(str) OutputDebugStringW(str);
