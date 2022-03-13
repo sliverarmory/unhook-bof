@@ -29,9 +29,6 @@
 #define _REFLECTIVEDLLINJECTION_REFLECTIVEDLLINJECTION_H
 //===============================================================================================//
 
-#pragma warning(disable: 4311)
-#pragma warning(disable: 4312)
-
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 

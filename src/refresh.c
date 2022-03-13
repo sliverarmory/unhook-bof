@@ -3,6 +3,7 @@
 #include "ReflectiveLoader.h"
 #include "unhook.h"
 #include "beacon.h"
+#include "syscalls.c"
 
 BOOL IsBeaconDLL(char* stomp, size_t beaconDllLength, PWSTR wszBaseDllName, USHORT BaseDllLength)
 {
@@ -58,7 +59,7 @@ void RefreshPE(void * buffer, char* stomp)
         MSVCRT$strncpy(skipModules[modulesToSkip++], stomp, 63);
     }
 
-    dprintf("[REFRESH] Running DLLRefresher");
+    //dprintf("[REFRESH] Running DLLRefresher");
 
     pLdteHead = GetInMemoryOrderModuleList();
     pLdteCurrent = pLdteHead;
@@ -81,7 +82,7 @@ void RefreshPE(void * buffer, char* stomp)
             wszBaseDllName = pLdteCurrent->BaseDllName.pBuffer;
             pDllBase = (ULONG_PTR)pLdteCurrent->DllBase;
 
-            dprintf("[REFRESH] Refreshing DLL: %S", wszFullDllName);
+            //dprintf("[REFRESH] Refreshing DLL: %S", wszFullDllName);
 
             hModule = CustomLoadLibrary(wszFullDllName, wszBaseDllName, pDllBase);
 
@@ -125,7 +126,6 @@ HMODULE CustomLoadLibrary(const PWCHAR wszFullDllName, const PWCHAR wszBaseDllNa
     SIZE_T stDllName;
     PWSTR wszDllName = NULL;
     PWCHAR wsRedir = NULL;
-    PWSTR wszRedirName = NULL;
     SIZE_T stRedirName;
     SIZE_T stSize;
 
@@ -137,7 +137,7 @@ HMODULE CustomLoadLibrary(const PWCHAR wszFullDllName, const PWCHAR wszBaseDllNa
     if (wcscmp(L"clr.dll", wszBaseDllName) == 0)
         goto cleanup;
 
-    dprintf("[REFRESH] Opening file: %S", wszFullDllName);
+    //dprintf("[REFRESH] Opening file: %S", wszFullDllName);
 
     // ----
     // Step 1: Map the file into memory
@@ -162,15 +162,15 @@ HMODULE CustomLoadLibrary(const PWCHAR wszFullDllName, const PWCHAR wszBaseDllNa
     pNtHeader = (PIMAGE_NT_HEADERS)(pFile + pDosHeader->e_lfanew);
 
     // allocate memory to copy DLL into
-    dprintf("[REFRESH] Allocating memory for library");
+    //dprintf("[REFRESH] Allocating memory for library");
     pLibraryAddr = (PCHAR)KERNEL32$VirtualAlloc(NULL, pNtHeader->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
     // copy header
-    dprintf("[REFRESH] Copying PE header into memory");
+    //dprintf("[REFRESH] Copying PE header into memory");
     __movsb((PBYTE)pLibraryAddr, (PBYTE)pFile, pNtHeader->OptionalHeader.SizeOfHeaders);
 
     // copy sections
-    dprintf("[REFRESH] Copying PE sections into memory");
+    //dprintf("[REFRESH] Copying PE sections into memory");
     pSectionHeader = (PIMAGE_SECTION_HEADER)(pFile + pDosHeader->e_lfanew + sizeof(IMAGE_NT_HEADERS));
     for (dwIdx = 0; dwIdx < pNtHeader->FileHeader.NumberOfSections; dwIdx++)
     {
@@ -186,7 +186,7 @@ HMODULE CustomLoadLibrary(const PWCHAR wszFullDllName, const PWCHAR wszBaseDllNa
     // ----
     // Step 3: Calculate relocations
     // ----
-    dprintf("[REFRESH] Calculating file relocations");
+    //dprintf("[REFRESH] Calculating file relocations");
 
     pDataDir = &pNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
     pInitialImageBase = pNtHeader->OptionalHeader.ImageBase;
@@ -249,7 +249,7 @@ HMODULE CustomLoadLibrary(const PWCHAR wszFullDllName, const PWCHAR wszBaseDllNa
     // ----
     // Step 4: Update import table
     // ----
-    dprintf("[REFRESH] Resolving Import Address Table (IAT) ");
+    //dprintf("[REFRESH] Resolving Import Address Table (IAT) ");
 
     pDataDir = &pNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
     if (pDataDir->Size)
@@ -267,9 +267,9 @@ HMODULE CustomLoadLibrary(const PWCHAR wszFullDllName, const PWCHAR wszBaseDllNa
             if (wszDllName == NULL)
                 goto next_import;
 
-            mbstowcs_s(&stSize, wszDllName, stDllName + 1, szDllName, stDllName);
+            mbstowcs_s((size_t*)&stSize, wszDllName, stDllName + 1, szDllName, stDllName);
 
-            dprintf("[REFRESH] Loading library: %S from %s", wszDllName, szDllName);
+            //dprintf("[REFRESH] Loading library: %S from %s", wszDllName, szDllName);
 
             // If the DLL starts with api- or ext-, resolve the redirected name and load it
             if (_wcsnicmp(wszDllName, L"api-", 4) == 0 || _wcsnicmp(wszDllName, L"ext-", 4) == 0)
@@ -285,7 +285,7 @@ HMODULE CustomLoadLibrary(const PWCHAR wszFullDllName, const PWCHAR wszBaseDllNa
                         goto next_import;
 
                     __movsb((PBYTE)wszDllName, (PBYTE)wsRedir, stRedirName * sizeof(WCHAR));
-                    dprintf("[REFRESH] Redirected library: %S", wszDllName);
+                    //dprintf("[REFRESH] Redirected library: %S", wszDllName);
                 }
             }
 
@@ -336,11 +336,10 @@ cleanup:
 
 HMODULE CustomGetModuleHandleW(const PWSTR wszModule)
 {
-    HMODULE hModule = NULL;
     PLDR_DATA_TABLE_ENTRY pLdteHead = NULL;
     PLDR_DATA_TABLE_ENTRY pLdteCurrent = NULL;
 
-    dprintf("[REFRESH] Searching for loaded module: %S", wszModule);
+    //dprintf("[REFRESH] Searching for loaded module: %S", wszModule);
 
     pLdteCurrent = pLdteHead = GetInMemoryOrderModuleList();
 
@@ -365,7 +364,7 @@ VOID ScanAndFixModule(void * buffer, PCHAR pKnown, PCHAR pSuspect, PWCHAR wszBas
 
     DWORD dwIdx;
 
-    dprintf("[REFRESH] Scanning module: %S", wszBaseDllName);
+    //dprintf("[REFRESH] Scanning module: %S", wszBaseDllName);
 
     pDosHeader = (PIMAGE_DOS_HEADER)pKnown;
     pNtHeader = (PIMAGE_NT_HEADERS)(pKnown + pDosHeader->e_lfanew);
@@ -380,7 +379,7 @@ VOID ScanAndFixModule(void * buffer, PCHAR pKnown, PCHAR pSuspect, PWCHAR wszBas
 		if (pSectionHeader[dwIdx].Characteristics & IMAGE_SCN_MEM_WRITE)
 			continue;
 
-		if (!((wcscmp(wszBaseDllName, L"clr.dll") == 0 && strcmp(pSectionHeader[dwIdx].Name, ".text") == 0)))
+		if (!((wcscmp(wszBaseDllName, L"clr.dll") == 0 && strcmp((char*)pSectionHeader[dwIdx].Name, ".text") == 0)))
 		{
 			ScanAndFixSection(buffer, wszBaseDllName, (PCHAR)pSectionHeader[dwIdx].Name, pKnown + pSectionHeader[dwIdx].VirtualAddress,
 				pSuspect + pSectionHeader[dwIdx].VirtualAddress, pSectionHeader[dwIdx].Misc.VirtualSize);
@@ -391,20 +390,43 @@ VOID ScanAndFixModule(void * buffer, PCHAR pKnown, PCHAR pSuspect, PWCHAR wszBas
 VOID ScanAndFixSection(void * buffer, PWCHAR dll, PCHAR szSectionName, PCHAR pKnown, PCHAR pSuspect, size_t stLength)
 {
     DWORD ddOldProtect;
+    ULONG status;
+    PVOID BaseAddress;
+    SIZE_T RegionSize;
+
+    // if you only want to unhook the .text section, uncomment this:
+    //if (strcmp(szSectionName, ".text"))
+    //    return;
 
     if (memcmp(pKnown, pSuspect, stLength) != 0)
     {
         BeaconFormatPrintf((formatp *)buffer, "%-20S <%s>\n", dll, szSectionName);
-        dprintf("[REFRESH] Found modification in: %s", szSectionName);
+        //dprintf("[REFRESH] Found modification in: %s", szSectionName);
 
-        if (!KERNEL32$VirtualProtect(pSuspect, stLength, PAGE_EXECUTE_READWRITE, &ddOldProtect))
+        BaseAddress = pSuspect;
+        RegionSize = stLength;
+        status = NtProtectVirtualMemory(
+            NtCurrentProcess(),
+            &BaseAddress,
+            &RegionSize,
+            PAGE_EXECUTE_READWRITE,
+            &ddOldProtect
+        );
+        if (!NT_SUCCESS(status))
             return;
 
-        dprintf("[REFRESH] Copying known good section into memory.");
+        //dprintf("[REFRESH] Copying known good section into memory.");
         __movsb((PBYTE)pSuspect, (PBYTE)pKnown, stLength);
 
-        if (!KERNEL32$VirtualProtect(pSuspect, stLength, ddOldProtect, &ddOldProtect))
-            dprintf("[REFRESH] Unable to reset memory permissions");
+        status = NtProtectVirtualMemory(
+            NtCurrentProcess(),
+            &BaseAddress,
+            &RegionSize,
+            ddOldProtect,
+            &ddOldProtect
+        );
+        //if (!NT_SUCCESS(status))
+            //dprintf("[REFRESH] Unable to reset memory permissions");
     }
 }
 
@@ -450,7 +472,6 @@ FARPROC WINAPI CustomGetProcAddressEx(HMODULE hModule, const PCHAR lpProcName, P
     PWSTR wszDllName;
     SIZE_T stDllName;
     PWCHAR wsRedir;
-    PWSTR wszRedirName = NULL;
     SIZE_T stRedirName;
 
     HMODULE hFwdModule;
@@ -484,14 +505,12 @@ FARPROC WINAPI CustomGetProcAddressEx(HMODULE hModule, const PCHAR lpProcName, P
     uiNameOrdinals = (uiLibraryAddress + pExportDirectory->AddressOfNameOrdinals);
 
     // test if we are importing by name or by ordinal...
-    #pragma warning(suppress: 4311)
-    if (((DWORD)lpProcName & 0xFFFF0000) == 0x00000000)
+    if (((DWORD_PTR)lpProcName & 0xFFFF0000) == 0x00000000)
     {
         // import by ordinal...
 
         // use the import ordinal (- export ordinal base) as an index into the array of addresses
-        #pragma warning(suppress: 4311)
-        uiAddressArray += ((IMAGE_ORDINAL((DWORD)lpProcName) - pExportDirectory->Base) * sizeof(DWORD));
+        uiAddressArray += ((IMAGE_ORDINAL((DWORD_PTR)lpProcName) - pExportDirectory->Base) * sizeof(DWORD));
 
         // resolve the address for this imported function
         fpResult = (FARPROC)(uiLibraryAddress + DEREF_32(uiAddressArray));
