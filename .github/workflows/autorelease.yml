@@ -34,7 +34,6 @@ jobs:
 
       - name: Build artifacts
         run: |
-          cd unhook-bof
           make clean
           make
           mkdir artifacts
