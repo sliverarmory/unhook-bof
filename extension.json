@@ -1,7 +1,7 @@
 {
-    "name": "unhook-bof",
+    "name": "Unhook BOF",
     "version": "0.0.0",
-    "command_name": "unhook",
+    "command_name": "unhook-bof",
     "extension_author": "c2biz",
     "original_author": "Cobalt-Strike",
     "repo_url": "https://github.com/sliverarmory/unhook-bof",
