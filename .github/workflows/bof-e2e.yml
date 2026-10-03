@@ -1,0 +1,40 @@
+name: Sliver BOF End-to-End
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/sliver-bof-e2e.yml
+      - .github/workflows/bof-e2e.yml
+      - scripts/prepare-sliver-bof-e2e.sh
+      - Makefile
+      - extension.json
+      - src/**
+      - unhook.x64.o
+      - unhook.x86.o
+  push:
+    branches: [master, 'feat/**']
+    paths:
+      - .github/sliver-bof-e2e.yml
+      - .github/workflows/bof-e2e.yml
+      - scripts/prepare-sliver-bof-e2e.sh
+      - Makefile
+      - extension.json
+      - src/**
+      - unhook.x64.o
+      - unhook.x86.o
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sliver-bof-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    uses: sliverarmory/sliver-test-bof/.github/workflows/e2e.yml@b25b1175aa7595929aa847d89d27e645b96ebf99
+    with:
+      manifest: .github/sliver-bof-e2e.yml
+      prepare-command: ./scripts/prepare-sliver-bof-e2e.sh
