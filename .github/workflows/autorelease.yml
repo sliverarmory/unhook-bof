@@ -58,7 +58,7 @@ jobs:
           name: unhook-bof-unsigned
           path: dist/unhook-bof.tar.gz
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30
 
   release:
     name: Sign, verify, and publish
