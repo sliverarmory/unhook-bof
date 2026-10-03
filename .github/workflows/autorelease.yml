@@ -1,60 +1,229 @@
-name: Release
+name: Build and release Armory package
 
 on:
+  pull_request:
+    branches: [master]
   push:
-    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
-    branches: [main]
+    branches: [master]
+    tags: ['v*']
+
+permissions:
+  contents: read
 
 jobs:
-  bof-build:
-    name: Build and publish tagged release
-    if: startsWith( github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  build:
+    name: Build and validate unsigned package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      commit_sha: ${{ steps.source.outputs.commit_sha }}
+      version: ${{ steps.source.outputs.version }}
     steps:
-      - name: OS Packages
-        run: |
-          sudo apt-get update --fix-missing && sudo apt-get -y install \
-          git build-essential zlib1g zlib1g-dev wget zip unzip \
-          mingw-w64 binutils-mingw-w64 g++-mingw-w64 gcc-multilib jq
-
-      - name: Minisign
-        run: |
-          MINISIGN_TMP=`mktemp -d`
-          cd $MINISIGN_TMP
-          wget https://github.com/aead/minisign/releases/download/v0.2.0/minisign-linux-amd64.tar.gz
-          tar xvf minisign-linux-amd64.tar.gz
-          mv ./minisign ~/minisign
-
-      - name: Check out code
-        uses: actions/checkout@v2
-
-      - name: Git Fetch Tags
-        run: git fetch --prune --unshallow --tags -f
-
-      - name: Build artifacts
-        run: |
-          make clean
-          make
-          mkdir artifacts
-          VERSION=$(git describe --tags --abbrev=0)
-          cat extension.json | jq ".version |= \"$VERSION\"" > ./artifacts/extension.json
-          mv *.o artifacts
-          cd artifacts
-          tar -czvf ../unhook-bof.tar.gz .
-
-      - name: Sign Package
-        run: |
-          touch ~/minisign.key && chmod 600 ~/minisign.key
-          echo -e "${{ secrets.MINISIGN_PRIVATE_KEY }}" > ~/minisign.key
-          MANIFEST=$(cat ./artifacts/extension.json | base64 -w 0)
-          bash -c "echo \"\" | ~/minisign -s ~/minisign.key -S -m ./unhook-bof.tar.gz -t \"$MANIFEST\" -x unhook-bof.minisig"
-
-      - name: "Publish Release"
-        uses: "marvinpinto/action-automatic-releases@latest"
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          prerelease: false
-          files: |
-            ./unhook-bof.tar.gz
-            ./unhook-bof.minisig
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check source and select package version
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit_sha=$(git rev-parse HEAD)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            version=${GITHUB_REF#refs/tags/}
+            [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+            [[ "$version" != v0.0.0 ]]
+            git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+            [[ "$commit_sha" == "$(git rev-parse refs/remotes/origin/master)" ]]
+          else
+            version=v0.0.0
+          fi
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package freshly compiled Windows BOFs
+        run: |
+          set -euo pipefail
+          python3 scripts/package.py --version '${{ steps.source.outputs.version }}' \
+            --output dist/unhook-bof.tar.gz
+          python3 scripts/validate_archive.py --archive dist/unhook-bof.tar.gz \
+            --version '${{ steps.source.outputs.version }}'
+
+      - name: Upload unsigned package for protected signing job
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unhook-bof-unsigned
+          path: dist/unhook-bof.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Sign, verify, and publish
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: armory-release
+    permissions:
+      actions: read
+      contents: write
+    concurrency:
+      group: unhook-bof-release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out reviewed tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore unsigned package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: unhook-bof-unsigned
+          path: dist
+
+      - name: Preflight archive and exact remote master commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
+          PACKAGE_VERSION: ${{ needs.build.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$COMMIT_SHA" ]]
+          [[ "$GITHUB_REF_NAME" == "$PACKAGE_VERSION" ]]
+          git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+          [[ "$COMMIT_SHA" == "$(git rev-parse refs/remotes/origin/master)" ]]
+          python3 scripts/validate_archive.py --archive dist/unhook-bof.tar.gz \
+            --version "$PACKAGE_VERSION"
+          if gh release view "$PACKAGE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists; publish a higher version instead' >&2
+            exit 1
+          fi
+
+      - name: Require successful BOF E2E on exact source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/bof-e2e.yml/runs?head_sha=$COMMIT_SHA&per_page=100")
+          mapfile -t run_ids < <(jq -r --arg sha "$COMMIT_SHA" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == "master" and (.event == "push" or .event == "workflow_dispatch") and .status == "completed" and .conclusion == "success")] | sort_by(.event != "push", -.run_number) | .[].id' \
+            <<< "$runs")
+          if [[ "${#run_ids[@]}" -eq 0 ]]; then
+            echo "No successful master BOF E2E run for $COMMIT_SHA" >&2
+            exit 1
+          fi
+          selected=''
+          for run_id in "${run_ids[@]}"; do
+            if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+              --name sliver-bof-e2e-objects --dir "$RUNNER_TEMP/tested-objects"; then
+              selected=$run_id
+              break
+            fi
+            rm -rf "$RUNNER_TEMP/tested-objects"
+          done
+          if [[ -z "$selected" ]]; then
+            echo 'Successful BOF E2E runs have no downloadable object artifact' >&2
+            exit 1
+          fi
+          echo "Using BOF E2E run $selected"
+          python3 scripts/compare_tested_objects.py \
+            --archive dist/unhook-bof.tar.gz --tested-dir "$RUNNER_TEMP/tested-objects"
+
+      - name: Install distribution-verified Minisign
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends minisign
+
+      - name: Sign archive with exact archived manifest as trusted comment
+        env:
+          ARMORY_RELEASE_MINISIGN_PRIVATE_KEY: ${{ secrets.ARMORY_RELEASE_MINISIGN_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          key_file=$(mktemp)
+          trap 'rm -f "$key_file"' EXIT
+          python3 - "$key_file" <<'PY'
+          import os, pathlib, sys
+          value = os.environ.get('ARMORY_RELEASE_MINISIGN_PRIVATE_KEY', '')
+          if not value:
+              raise SystemExit('ARMORY_RELEASE_MINISIGN_PRIVATE_KEY is unavailable')
+          if '\n' not in value and '\\n' in value:
+              value = value.replace('\\n', '\n')
+          pathlib.Path(sys.argv[1]).write_text(value.rstrip('\n') + '\n')
+          PY
+          manifest=$(tar -xOzf dist/unhook-bof.tar.gz ./extension.json | base64 -w 0)
+          printf '\n' | minisign -S -s "$key_file" -m dist/unhook-bof.tar.gz \
+            -x dist/unhook-bof.minisig -t "$manifest"
+
+      - name: Verify signed package
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_signature.py --archive dist/unhook-bof.tar.gz \
+            --signature dist/unhook-bof.minisig \
+            --public-key 'RWTfJUbkhmANsG740AhAuvsBY1hGaiMQYPq3DxZcT2zYQZ1sMbRnDsP+'
+          sha256sum dist/unhook-bof.tar.gz dist/unhook-bof.minisig
+
+      - name: Create draft release with both signed assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            dist/unhook-bof.tar.gz dist/unhook-bof.minisig \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "$GITHUB_REF_NAME" --generate-notes
+
+      - name: Verify freshly downloaded draft release bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p downloaded
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --dir downloaded --pattern 'unhook-bof.*'
+          cmp dist/unhook-bof.tar.gz downloaded/unhook-bof.tar.gz
+          cmp dist/unhook-bof.minisig downloaded/unhook-bof.minisig
+          [[ "$(find downloaded -type f | wc -l)" -eq 2 ]]
+          python3 scripts/validate_archive.py --archive downloaded/unhook-bof.tar.gz \
+            --version "$GITHUB_REF_NAME"
+          python3 scripts/validate_signature.py --archive downloaded/unhook-bof.tar.gz \
+            --signature downloaded/unhook-bof.minisig \
+            --public-key 'RWTfJUbkhmANsG740AhAuvsBY1hGaiMQYPq3DxZcT2zYQZ1sMbRnDsP+'
+          sha256sum downloaded/unhook-bof.tar.gz downloaded/unhook-bof.minisig
+
+      - name: Publish the verified immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --draft=false --latest
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            --jq '.immutable and (.draft | not)' | grep -qx true
+
+      - name: Verify anonymous public release assets
+        run: |
+          set -euo pipefail
+          mkdir -p public
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          curl -q --fail --location --retry 3 --retry-delay 2 \
+            --output public/unhook-bof.tar.gz "$base/unhook-bof.tar.gz"
+          curl -q --fail --location --retry 3 --retry-delay 2 \
+            --output public/unhook-bof.minisig "$base/unhook-bof.minisig"
+          cmp dist/unhook-bof.tar.gz public/unhook-bof.tar.gz
+          cmp dist/unhook-bof.minisig public/unhook-bof.minisig
+          python3 scripts/validate_archive.py --archive public/unhook-bof.tar.gz \
+            --version "$GITHUB_REF_NAME"
+          python3 scripts/validate_signature.py --archive public/unhook-bof.tar.gz \
+            --signature public/unhook-bof.minisig \
+            --public-key 'RWTfJUbkhmANsG740AhAuvsBY1hGaiMQYPq3DxZcT2zYQZ1sMbRnDsP+'
+          sha256sum public/unhook-bof.tar.gz public/unhook-bof.minisig

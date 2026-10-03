@@ -3,26 +3,8 @@ name: Sliver BOF End-to-End
 on:
   pull_request:
     branches: [master]
-    paths:
-      - .github/sliver-bof-e2e.yml
-      - .github/workflows/bof-e2e.yml
-      - scripts/prepare-sliver-bof-e2e.sh
-      - Makefile
-      - extension.json
-      - src/**
-      - unhook.x64.o
-      - unhook.x86.o
   push:
     branches: [master, 'feat/**']
-    paths:
-      - .github/sliver-bof-e2e.yml
-      - .github/workflows/bof-e2e.yml
-      - scripts/prepare-sliver-bof-e2e.sh
-      - Makefile
-      - extension.json
-      - src/**
-      - unhook.x64.o
-      - unhook.x86.o
   workflow_dispatch:
 
 permissions:
