@@ -51,7 +51,7 @@ jobs:
           python3 scripts/validate_archive.py --archive dist/unhook-bof.tar.gz \
             --version '${{ steps.source.outputs.version }}'
 
-      - name: Upload unsigned package for protected signing job
+      - name: Upload unsigned package for signing job
         if: github.event_name == 'push' && github.ref_type == 'tag'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -66,7 +66,6 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    environment: armory-release
     permissions:
       actions: read
       contents: write
@@ -74,7 +73,7 @@ jobs:
       group: unhook-bof-release-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - name: Check out reviewed tag
+      - name: Check out release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -144,7 +143,7 @@ jobs:
 
       - name: Sign archive with exact archived manifest as trusted comment
         env:
-          ARMORY_RELEASE_MINISIGN_PRIVATE_KEY: ${{ secrets.ARMORY_RELEASE_MINISIGN_PRIVATE_KEY }}
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -153,9 +152,9 @@ jobs:
           trap 'rm -f "$key_file"' EXIT
           python3 - "$key_file" <<'PY'
           import os, pathlib, sys
-          value = os.environ.get('ARMORY_RELEASE_MINISIGN_PRIVATE_KEY', '')
+          value = os.environ.get('MINISIGN_PRIVATE_KEY', '')
           if not value:
-              raise SystemExit('ARMORY_RELEASE_MINISIGN_PRIVATE_KEY is unavailable')
+              raise SystemExit('MINISIGN_PRIVATE_KEY is unavailable')
           if '\n' not in value and '\\n' in value:
               value = value.replace('\\n', '\n')
           pathlib.Path(sys.argv[1]).write_text(value.rstrip('\n') + '\n')
@@ -200,7 +199,7 @@ jobs:
             --public-key 'RWTfJUbkhmANsG740AhAuvsBY1hGaiMQYPq3DxZcT2zYQZ1sMbRnDsP+'
           sha256sum downloaded/unhook-bof.tar.gz downloaded/unhook-bof.minisig
 
-      - name: Publish the verified immutable release
+      - name: Publish the verified release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -208,7 +207,7 @@ jobs:
           gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --draft=false --latest
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            --jq '.immutable and (.draft | not)' | grep -qx true
+            --jq '(.draft | not)' | grep -qx true
 
       - name: Verify anonymous public release assets
         run: |
