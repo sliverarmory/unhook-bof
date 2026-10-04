@@ -8,6 +8,11 @@ Load unhook.cna into Cobalt Strike via Cobalt Strike -> Script Manager
 
 Run 'unhook' from Beacon
 
+The Sliver Armory package uses the built-in Reflektor BOF executor. It requires
+a Sliver client, server, and Windows implant with BOF v1 support; the package
+does not install COFFLoader as a fallback. The optional skipmodule argument is
+a comma-separated list of DLL names to leave unchanged.
+
 To build:
 
 make

@@ -47,16 +47,13 @@ void RefreshPE(void * buffer, char* stomp)
         MSVCRT$memset(&skipModules[i], 0, 64);
     }
 
-    char *comma = MSVCRT$strtok(stomp, ",");
-    
-    if(comma != NULL) {
-        while(comma != NULL) {
-            MSVCRT$strncpy(skipModules[modulesToSkip++], comma, 63);
-            comma = MSVCRT$strtok(NULL, ",");
+    /* An omitted skipmodule argument means there are no modules to skip. */
+    if (stomp != NULL) {
+        char *module = MSVCRT$strtok(stomp, ",");
+        while (module != NULL && modulesToSkip < 32) {
+            MSVCRT$strncpy(skipModules[modulesToSkip++], module, 63);
+            module = MSVCRT$strtok(NULL, ",");
         }
-    }
-    else {
-        MSVCRT$strncpy(skipModules[modulesToSkip++], stomp, 63);
     }
 
     //dprintf("[REFRESH] Running DLLRefresher");

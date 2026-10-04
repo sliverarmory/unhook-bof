@@ -10,7 +10,11 @@ void go(char* args, int length) {
 	char* stomp;
 
 	BeaconDataParse(&parser, args, length);
-	stomp = BeaconDataExtract(&parser, NULL);
+	/* The argument buffer is a 4-byte header plus length-prefixed fields. */
+	stomp = NULL;
+	if (args != NULL && length >= 8) {
+		stomp = BeaconDataExtract(&parser, NULL);
+	}
 
 	BeaconFormatAlloc(&buffer, 64 * 1024);
 

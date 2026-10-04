@@ -6,7 +6,7 @@
     "original_author": "Cobalt-Strike",
     "repo_url": "https://github.com/sliverarmory/unhook-bof",
     "help": "Remove API hooks from a Beacon process.",
-    "depends_on": "coff-loader",
+    "bof_executor": "reflektor",
     "entrypoint": "go",
     "files": [
         {

@@ -1,0 +1,51 @@
+schema: sliver-bof-e2e/v1
+
+sliver:
+  version: 422044af0dbfd75e4588756f9c7a4e3536eba376
+
+defaults:
+  bof_executor: reflektor
+  entrypoint: go
+  modes: [session, beacon]
+  command_timeout: 3m
+
+suites:
+  - name: windows-amd64
+    target:
+      os: windows
+      arch: amd64
+    tests:
+      - name: unhook-with-skip-list
+        object: unhook.x64.o
+        args:
+          - type: string
+            value: ntdll.dll,kernel32.dll,kernelbase.dll
+        expect:
+          output:
+            contains: [Unhook is done.]
+
+      - name: unhook-without-arguments
+        object: unhook.x64.o
+        expect:
+          output:
+            contains: [Unhook is done.]
+
+  - name: windows-386
+    target:
+      os: windows
+      arch: '386'
+    tests:
+      - name: unhook-with-skip-list
+        object: unhook.x86.o
+        args:
+          - type: string
+            value: ntdll.dll,kernel32.dll,kernelbase.dll
+        expect:
+          output:
+            contains: [Unhook is done.]
+
+      - name: unhook-without-arguments
+        object: unhook.x86.o
+        expect:
+          output:
+            contains: [Unhook is done.]
